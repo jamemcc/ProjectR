@@ -1,0 +1,461 @@
+---
+title: "2016 Candidates and Funding"
+author: "Jamey McCabe"
+date: "August 11, 2015"
+output: html_document
+---
+
+```{r, echo=FALSE}
+sessionInfo()
+# Add libraries used 
+  library (dplyr)
+  library(ggplot2) 
+  library(GGally) 
+  library(scales)
+  library(xlsx)
+  library(tidyr)
+  library(gridExtra)
+  library(maps)
+  library(plyr)
+  detach("package:plyr", unload=TRUE) 
+  setwd("~/uIDS/P4")
+
+```
+This Analysis  pulls in and analyzes the 2016 Federal Election Commision (FEC) registered Campaign Committtees. as of August 2015.  Note that the data to be viewed will focus largely on the amount of new money flowing into these committees in the first 2 quarters of 2016 which is what the 2016 FEC data contains so far.  Definations of the data that these Committees report can be found here:
+http://www.fec.gov/finance/disclosure/metadata/MetadataforCommitteeReportbyReportSummary.shtml#search=%22fil_fre%22
+
+This first section brings in the data and cleans it up.
+```{r}
+#bring in list of 2106 registered committees
+campComm <- read.csv("project/CampaignAndCommitteeSummaryAction.csv")
+
+#bring in the 2 new tables making sure numeric data especially that with leadin $ is treated as such 
+# Note had to cleanup data before read via this sed command: sed 's/ ""S","/s /' CampaignAndCommitteeSummaryAction.csv > CampaignAndCommitteeSummaryAction2.csv
+
+# preread csv to better assign data types 
+tab5rows <- read.csv("project/CampaignAndCommitteeSummaryAction.csv",nrows = 5)
+classes1 <- sapply(tab5rows, class)
+for(i in 14:91){classes1[i] <-  "character"}
+{classes1["zip"] <-  "character"} # issue where CA is showing up in zip so can't be the default integer
+{classes1["fec_ele_yea"] <-  "character"} # issue where some character value is showing up in zip so can't be the default integer
+
+# convert 2 date columns
+setClass('myDate')
+setAs("character","myDate", function(from) as.Date(from, format="%Y-%m-%d") )
+{classes1["cov_sta_dat"] <-  "myDate"}
+{classes1["cov_end_dat"] <-  "myDate"}
+
+#Read full file using all settings above
+campComm <- read.csv("project/CampaignAndCommitteeSummaryAction2.csv",colClasses = classes1)
+## Change $ columns into numeric
+# replace $
+for(i in 14:66){campComm[,i] <- sub("\\$","", campComm[,i])}
+campComm[,69] <- sub("\\$","", campComm[,i])
+#replace ,
+for(i in 14:66){campComm[,i] <- as.numeric(sub("\\,","", campComm[,i]))}
+campComm[,69] <- as.numeric(sub("\\,","", campComm[,i]))
+#replace NA with 0
+campComm[,14:66] <- campComm[,14:66] %>%  replace(is.na(.), 0)
+campComm[,69] <- campComm[,69] %>%  replace(is.na(.), 0)
+
+#remove 5 rows with negative Tot_rec - not valid data
+campComm <- campComm[-1055,]
+campComm <- campComm[-1392,]
+campComm <- campComm[-1779,]
+campComm <- campComm[-2803,]
+campComm <- campComm[-2803,]
+
+
+# change committe name where it is too long and ruins graphs
+campComm <- campComm[-598,]
+campComm <- campComm[-597,]
+
+```
+
+Now that we have the data in a fairly clean format lets look at histograms of some of the more promising factors which may be useful to better understand the data. 
+```{r}
+
+# some quick view of the distribution of the data - Univariate
+p1 <- ggplot(aes(x=rep_typ),data=campComm)+ geom_histogram() # Report Type
+p2 <- ggplot(aes(x=com_typ),data=campComm)+ geom_histogram() # Committe Type
+p3 <- ggplot(aes(x=com_des),data=campComm)+ geom_histogram() # Committee Designation
+p4 <- ggplot(aes(x=fil_fre),data=campComm)+ geom_histogram() # Filing Frequency
+p5 <- ggplot(aes(x=sta),data=campComm)+ geom_histogram() # State (of the United)
+grid.arrange(p1,p2,p3,p4,p5,ncol=2)
+```
+
+So those factors were less than impressive except for Committe Type and State.  State though makes me want to look at the data in a color coded map of the US. 
+```{r}
+### a US map view 
+#item to put in the map grouped and summarized by state
+dataToMap <- 
+  campComm %>% 
+  group_by(sta) %>% 
+  summarise(
+    tot_rec=sum(tot_rec),
+    n=n()) %>%
+  ungroup() %>%
+  arrange(sta)
+# change state abbreviate to state name and remove any invalid states
+dataToMap <- mutate(dataToMap,state = tolower(state.name[match(sta,state.abb)]))
+dataToMap <- dataToMap[!is.na(dataToMap$state),]
+
+# from library maps pull state map data
+if (require(maps)) {
+  states_map <- map_data("state")
+  # ggplot using geom_map
+  p5.1 <- ggplot(dataToMap, aes(map_id = state)) + geom_map(aes(fill = n), map = states_map) + expand_limits(x = states_map$long, y = states_map$lat)
+}
+grid.arrange(p5,p5.1,ncol=1)
+```
+
+So enough Uni-variate Analysis - lets start on some Bi-variate analysis using the tot_rec ( Total Receipts) by State
+```{r}
+
+#Total receipts by state
+p6 <- ggplot(aes(x=sta,y=tot_rec),data=campComm)+ geom_point(size=2,)
+grid.arrange(p5,p6,ncol=1)
+```
+
+A little hard to read - lets try a Log10 scale
+```{r}
+p7 <- ggplot(aes(x=sta,y=tot_rec),data=campComm)+ geom_point(size=2,)+scale_y_log10()
+grid.arrange(p5,p7,ncol=1)
+```
+
+Not much different but interesting how it seems denser at the top but how dense? Lets try out color and Alpha and Theme - note output to PDF is a workaround because in my personal machine I can't display alpha type things, but PDF works well.
+```{r}
+pdf(file="elec16-1.pdf")
+p7.1 <- ggplot(aes(x=sta,y=tot_rec),data=campComm)+ 
+  geom_point(size=3,alpha=.3, color="darkBlue") +
+  scale_y_log10() +
+  theme(axis.text.x = element_text(colour="grey20",size=10,angle=90,hjust=.5,vjust=.5,face="plain"))
+p7.1
+dev.off()
+```
+
+Hmm - never did look at the distribution of the data to see how it is distributed.   
+```{r}
+p8 <- ggplot(aes(x=tot_rec),data=campComm)+ geom_bar()
+p8
+```
+
+Certainly is long tail - lets try log10 but for the distribution curve
+```{r}
+p9 <- ggplot(aes(x=tot_rec),data=campComm)+ 
+  geom_bar()+
+  scale_x_log10(labels=c("$0","$1","$1,000","$1M"))
+p9
+```
+
+A lot more regular looking although bi-modal, I think that's the term for 2 peaks.  What is the quartile distribultion?
+```{r}
+summary(campComm$tot_rec)
+```
+
+Wow - a lot of committes with no receipts and the mean well below the median.  As often talked about in reent election news perhaps there are just a few really large committees getting all the money.  lets look further at the large ones.
+```{r}
+# Filter to just the Top 1% committees
+upperCampComm <- campComm[campComm$tot_rec > quantile(campComm$tot_rec,probs=.99),]
+# condense rows to just plottable data
+sumUpperCampComm <- 
+  upperCampComm %>% 
+  group_by(com_nam) %>% 
+  summarise(
+    tot_rec=sum(tot_rec),
+    n=n()) %>%
+    ungroup() %>%
+  arrange(com_nam)
+#order data for plotting by higest to lowest
+sumUpperCampComm2 = transform(sumUpperCampComm,com_nam = reorder(com_nam,tot_rec))
+ggplot(aes(x=com_nam,y=tot_rec,label=tot_rec),
+  data=sumUpperCampComm2) +
+  geom_bar(stat="identity")+scale_y_continuous( )+ 
+  coord_flip() +
+  theme(text = element_text(colour="grey20",size=10,angle=0,hjust=.5,vjust=.5,face="plain"))
+```
+
+It's interesting to see the real names of these committes and good to see the curve of how it declines from the upper.  Lets see the curve for the top 5% even if we won't be able to make out their names
+```{r echo=FALSE}
+# Filter to the Top 5% committees
+upperCampComm <- campComm[campComm$tot_rec > quantile(campComm$tot_rec,probs=.95),]
+# condense rows to just plottable data
+sumUpperCampComm <- 
+  upperCampComm %>% 
+  group_by(com_nam) %>% 
+  summarise(
+    tot_rec=sum(tot_rec),
+    n=n()) %>%
+    ungroup() %>%
+  arrange(com_nam)
+#order data for plotting by higest to lowest
+sumUpperCampComm2 = transform(sumUpperCampComm,com_nam = reorder(com_nam,tot_rec))
+ggplot(aes(x=com_nam,y=tot_rec,label=tot_rec),
+  data=sumUpperCampComm2) +
+  geom_bar(stat="identity")+scale_y_continuous( )+ 
+  coord_flip() +
+  theme(text = element_text(colour="grey20",size=10,angle=0,hjust=.5,vjust=.5,face="plain"))
+```
+
+Good - so lets se the top 50% which should almost be an area chart of all the money received
+```{r echo=FALSE}
+# Filter to the Top 50% committees
+upperCampComm <- campComm[campComm$tot_rec > quantile(campComm$tot_rec,probs=.5),]
+# condense rows to just plottable data
+sumUpperCampComm <- 
+  upperCampComm %>% 
+  group_by(com_nam) %>% 
+  summarise(
+    tot_rec=sum(tot_rec),
+    n=n()) %>%
+    ungroup() %>%
+  arrange(com_nam)
+#order data for plotting by higest to lowest
+sumUpperCampComm2 = transform(sumUpperCampComm,com_nam = reorder(com_nam,tot_rec))
+ggplot(aes(x=com_nam,y=tot_rec,label=tot_rec),
+  data=sumUpperCampComm2) +
+  geom_bar(stat="identity")+scale_y_continuous( )+ 
+  coord_flip() +
+  theme(text = element_text(colour="grey20",size=10,angle=0,hjust=.5,vjust=.5,face="plain"))
+```
+
+Ok, lets try some Multivariate Analysis.  Lets group by the factors and try a GGPAIRS 
+```{r}
+
+# Top committees 75% to 95% - Multivariate - Receipts, State, Committee Type, 	Committee Designation, Filing Frequency
+upper20CampComm <- campComm[campComm$tot_rec > quantile(campComm$tot_rec,probs=.75),] # extract top 25%
+upper20CampComm <- upper20CampComm[upper20CampComm$tot_rec < quantile(campComm$tot_rec,probs=.95),] # remove top 5%
+# condense rows to just plottable data
+sumUpper20CampComm <- 
+  upper20CampComm %>% 
+  group_by(sta,com_typ,com_des,fil_fre) %>% 
+  summarise(
+    tot_rec=sum(tot_rec), 
+    cas_on_han_clo_of_per=max(cas_on_han_clo_of_per),
+    n=n()) %>%
+    ungroup() %>%
+  arrange(sta,com_typ,com_des,fil_fre)
+  
+ggpairs(sumUpper20CampComm)
+```
+
+Well as always an interesting graph.  I'm interested in what the correlations are between tot_rec and cas_on_han and the other factors.  I don't see it here so lets just try them 1 by 1
+```{r}
+# examine House versus Senate receipt
+p10 <- ggplot(aes(x=sta,y=tot_rec,fill=com_typ),
+  data=sumUpper20CampComm) +
+  geom_bar(stat="identity")+scale_fill_discrete()+
+  theme(text = element_text(colour="grey20",size=10,angle=0,hjust=.5,vjust=.5,face="plain"))
+p10
+# examine Type of Committee receipt
+ggplot(aes(x=sta,y=tot_rec,fill=com_des),
+  data=sumUpper20CampComm) +
+  geom_bar(stat="identity")+scale_y_continuous( )+ scale_x_discrete() +
+  scale_fill_discrete(labels=c("authorized","principal")) +
+  theme(text = element_text(colour="grey20",size=10,angle=0,hjust=.5,vjust=.5,face="plain"))
+# examine  filing frequency receipts
+ggplot(aes(x=sta,y=tot_rec,fill=fil_fre),
+  data=sumUpper20CampComm) +
+  geom_bar(stat="identity")+scale_y_continuous( )+ scale_x_discrete() +
+  scale_fill_discrete(labels=c("Quartery","terminated")) +
+  theme(text = element_text(colour="grey20",size=10,angle=0,hjust=.5,vjust=.5,face="plain"))
+```
+
+So it is really just Committee Type (House versus Senate) which is much of an interesting factor.  Lets bring in Cash on Hand as a downward bar to compare to Total Receipts on the upward bar and use Committe Type as fill
+```{r}
+# examine House versus Senate new campaign contributions vs Cash on Hand
+p11 <- p10 + geom_bar(data =sumUpper20CampComm, 
+  aes(x=sta,y=-cas_on_han_clo_of_per,fill=com_typ), stat = 'identity') +
+  scale_y_continuous(breaks=c(-2000000,0,2000000,4000000,6000000,8000000,10000000),
+    labels=c("$2M","$0","$2M","$4M","$6M","$8M","$10M"))+
+  ylab("Cash On Hand -                                    Total New Funds Received                                  ") +
+  scale_fill_manual(values = c("orangered3", "steelblue3"),labels=c("House","Senate"))+ 
+  geom_hline(yintercept = 0,colour = "black")
+p11
+```
+
+Lets try creating our own fact with Cut.  it seems to me that there are natural groupings of committes based on how much money they've brought in.  basicalyl a bunch at the bottom (up to 75%) that bring in very little, than a larger group 75% to 95% that don't bring in so much but as there are a lot of them it adds up, and finally the bigs dogs in 2 more groups 95-99% and the top 1%ers.
+```{r}
+# Add self constructed breaks
+campComm$tot_recGrps = cut(campComm$tot_rec,c(0,
+ quantile(campComm$tot_rec,probs=.75),
+ quantile(campComm$tot_rec,probs=.95),
+ quantile(campComm$tot_rec,probs=.99), 
+ max(campComm$tot_rec) 
+ ),labels=c("bottom 75%","75% to 95%","95% to 99%","top 1%")
+ )
+#Function to format as currency
+printCurrency <- function(value, currency.sym="$", digits=2, sep=",", decimal=".") {
+  paste(
+        currency.sym,
+        formatC(value, format = "f", big.mark = sep, digits=digits, decimal.mark=decimal),
+        sep=""
+  )
+}
+# summarize total rec by the new breaks
+sumCampCommByBrks <- 
+  campComm %>% 
+  group_by(tot_recGrps) %>% 
+  summarise(
+    n=n(),
+    maxIndivCommittee=printCurrency(max(tot_rec)),
+    tot_rec=sum(tot_rec)
+    ) %>%
+    ungroup() %>%
+  arrange(tot_recGrps) 
+#plot it
+p <- ggplot(sumCampCommByBrks, aes(x=1, y=tot_rec, fill=tot_recGrps)) +
+        geom_bar(stat="identity") + scale_x_continuous(labels = dollar)
+p <- p + coord_polar(theta='y')+
+        scale_y_continuous(labels = dollar) +
+        ggtitle("how big (in received) are the committees")
+p
+```
+
+Wow, that was tough and took a lot of code, but yeah it gives a nice picture of what I suspected most money is not coming for the big dogs but for the 20% of committes in the 75%to95% range.
+
+Ok so lets conclude - Most revealing information:
+#1 Top 5% of Committes and pattern of receipts for them.  #
+Interesting to see the names and shows that the top 1% is in no way overshadowing the 95%.  In otherwords there is not a clear majority large Super PAC or small group of Super PACs.
+```{r}
+# Filter to the Top 5% committees
+upperCampComm <- campComm[campComm$tot_rec > quantile(campComm$tot_rec,probs=.95),]
+# condense rows to just plottable data
+sumUpperCampComm <- 
+  upperCampComm %>% 
+  group_by(com_nam) %>% 
+  summarise(
+    tot_rec=sum(tot_rec),
+    n=n()) %>%
+  ungroup() %>%
+  arrange(com_nam)
+#order data for plotting by higest to lowest
+sumUpperCampComm2 = transform(sumUpperCampComm,com_nam = reorder(com_nam,tot_rec))
+ggplot(aes(x=com_nam,y=tot_rec,label=tot_rec),
+  data=sumUpperCampComm2) +
+  geom_bar(stat="identity",colour="darkolivegreen4")+
+  scale_y_continuous(breaks=c(0,500000,1000000,1500000),labels=c("$0","$500K","$1M","$1.5M" ))+ 
+  coord_flip() +
+  theme(axis.text.x = element_text(colour="grey20",size=15,angle=0,hjust=.5,vjust=.5,face="plain"),
+    axis.text.y = element_text(colour="grey20",size=8,angle=0,hjust=.5,vjust=.5,face="plain"),
+    plot.title = element_text(colour="DarkGreen",size=25,angle=0,hjust=.5,vjust=.5,face="plain"),
+    panel.grid.major.x = element_line(colour="grey10"),
+    axis.title = element_text(colour="darkolivegreen",size=20,angle=0,hjust=.5,vjust=.5,face="plain"))+
+  xlab("Committee Name") +
+  ylab("Donations/Receipts") +
+  ggtitle("Top 5% Committees in first half of 2016")
+
+```
+
+#2 comparison of Income by Income Band#
+As a better analysis and illustration of the quesiton of what types of committees and what types of donations bring in the most money for the 2016 election so far, we can create bands of the committees where the committes are sorted by the amount of money they've brought in so far.  in the analysis below these bands are:
+* 0-75%
+* 75-95%
+* 95-99%
+* top 1%
+As you can first see in the table:
+
+```{r}
+
+# Add self constructed breaks
+campComm$tot_recGrps = cut(campComm$tot_rec,c(0,
+ quantile(campComm$tot_rec,probs=.75),
+ quantile(campComm$tot_rec,probs=.95),
+ quantile(campComm$tot_rec,probs=.99), 
+ max(campComm$tot_rec) 
+ ),labels=c("bottom 75%","75% to 95%","95% to 99%","top 1%")
+ )
+#Function to format as currency
+printCurrency <- function(value, currency.sym="$", digits=2, sep=",", decimal=".") {
+  paste(
+        currency.sym,
+        formatC(value, format = "f", big.mark = sep, digits=digits, decimal.mark=decimal),
+        sep=""
+  )
+}
+# summarize total rec by the new breaks
+sumCampCommByBrks <- 
+  campComm %>% 
+  group_by(tot_recGrps) %>% 
+  summarise(
+    n=n(),
+    maxIndivCommittee=printCurrency(max(tot_rec)),
+    tot_rec=sum(tot_rec)
+    ) %>%
+    ungroup() %>%
+  arrange(tot_recGrps)
+```
+As you can first see in the table, the bottom 75% of committes only bring in ~$21M with the maximum committe (the 75%) bringing in $86K.  On the other end of the spectrumm the Top 1% also brought in approximately the same at $26m though their maximum contribution was $1M.
+```{r}
+sumCampCommByBrks
+```
+graphing all 4 groups total income in a pie chart we can see that the 75-95% group is by far the largest total income producer (not the 95%-99% or the top 1% as common wisdom expects).
+```{r}
+
+#plot it
+p <- ggplot(sumCampCommByBrks, aes(x=1, y=tot_rec, fill=tot_recGrps)) +
+        geom_bar(stat="identity") + scale_x_continuous(labels = dollar)
+p <- p + coord_polar(theta='y')+
+        scale_y_continuous(labels = dollar) +
+    theme(axis.text.x = element_text(colour="grey20",size=8,angle=0,hjust=.5,vjust=.5,face="plain"),
+      axis.text.y = element_blank(),
+      axis.text.x = element_blank(),
+      plot.title = element_text(colour="grey15",size=25,angle=0,hjust=.5,vjust=.5,face="plain"),
+      panel.grid.major.y = element_line(colour="grey10"),
+      legend.title=element_blank(),
+      legend.background = element_rect(color="grey20", fill = "grey90", size=.5, linetype="dotted"),
+      axis.title = element_text(colour="grey15",size=12,angle=0,hjust=.5,vjust=.5,face="plain"))+
+    ylab("Pie represents Total Income across all committees") +    
+    xlab("") +
+    ggtitle("Which band of committees brings in the most Income?")
+p
+```
+
+#3 House versus Senate new campaign contributions by Income Band#
+Looking at which states produce the most income we can see in the following that California is the clear largest state for Committees. An interesting dynamic/correlation emerges from the Income Groupings though: The top 1% donate to the Senate much more than they do to the House.
+```{r}
+#summarize data using the breaks but also state and comm_type
+sumCampCommByBrks <- 
+  campComm %>% 
+  group_by(tot_recGrps,sta,com_typ) %>% 
+  summarise(
+    n=n(),
+    cas_on_han_clo_of_per=max(cas_on_han_clo_of_per),
+    tot_rec=sum(tot_rec)
+    ) %>%
+    ungroup() %>%
+  arrange(tot_recGrps,sta,com_typ) 
+
+p12 <- ggplot(aes(x=sta,y=tot_rec,fill=com_typ),
+  data=sumCampCommByBrks[!is.na(sumCampCommByBrks$tot_recGrps)]) +
+  facet_grid(tot_recGrps ~ .) +
+  geom_bar(stat="identity")+scale_fill_discrete()+
+  scale_y_continuous(breaks=c(0,500000,1000000,1500000,2000000,2500000),
+                     labels=c("$0","$500K","$1M","$1.5M","$2M","$2.5M" ),limits=c(0,3000000))+ 
+  theme(axis.text.x = element_text(colour="grey20",size=8,angle=0,hjust=.5,vjust=.5,face="plain"),
+    axis.text.y = element_text(colour="grey20",size=12,angle=0,hjust=.5,vjust=.5,face="plain"),
+    plot.title = element_text(colour="grey15",size=25,angle=0,hjust=.5,vjust=.5,face="plain"),
+    panel.grid.major.y = element_line(colour="grey10"),
+    legend.title=element_blank(),
+    legend.background = element_rect(color="grey20", fill = "grey90", size=.5, linetype="dotted"),
+    axis.title = element_text(colour="grey15",size=12,angle=0,hjust=.5,vjust=.5,face="plain"))+
+  xlab("State in the United States") +
+  ylab("Total New Funds Received                       ") +
+  ggtitle("Donations compared across Income Groups")
+p12
+```
+
+#Final Thoughts/Debrief:#
+1. Isssues
+   + Struggled because I needed/wanted more factors within which to analyze and possible work out some sort of stronger correlatio/model.
+   + Tried some larger ggpair and they bogged down my machine for over and hour before I killed it and wasn't going to be able to read the plot anyway.
+   + had in mind to create even more complex combination graph with both datapoints (tot_rec & cas_on_han) with the facet by group but it wouldnt work.  Pretty complex data arrangement.
+   
+2. Successes
+   + really geting closer to the gammer of grphics - can oftern remember words needed and moste concets without lookup.  Just use google search now for tough stuff. Sometimes doing it in my dreams.
+   + learned some about the FEC and Campaign Committees
+   
+3. Next Steps:
+   + rerun the analysis at end of year and again this time next year.
+   + more research on the committees and what is and isn't included in this data
+   
