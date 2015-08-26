@@ -85,7 +85,7 @@ p2 <- ggplot(aes(x=com_typ),data=campComm)+ geom_histogram() # Committe Type
 p3 <- ggplot(aes(x=com_des),data=campComm)+ geom_histogram() # Committee Designation
 p4 <- ggplot(aes(x=fil_fre),data=campComm)+ geom_histogram() # Filing Frequency
 p5 <- ggplot(aes(x=sta),data=campComm)+ geom_histogram() # State (of the United)
-grid.arrange(p1,p2,p3,p4,p5,ncol=2)
+grid.arrange(p1,p2,p3,p4,p5,ncol=1)
 ```
 What we see in the above is  
 # the top 2 factors, rep_type and com_typ look like useful factors for differentiating the data. For rep_type (Report Type) after further research it turns out this is really just telling us that the committes reported their income twice so far this year once in the first quarter and once in the second).  Since we intend to do an analysis around income this is in essence a clue we have more vertical data and will need to summarize and is not a factor we will likely use to understand or model by.  
@@ -114,7 +114,7 @@ if (require(maps)) {
       geom_map(aes(fill = n), map = states_map) +
       expand_limits(x = states_map$long, y = states_map$lat)
 }
-grid.arrange(p5,p5.1,ncol=1)
+p5.1
 ```
 
 It's more obvious from the US map that the most political committes are in California though also in Texas, Florida and New York. Not surprising as these are such large states.   Not so obvious in the map but easier to see in the Histogram is that Illinois and North Carolina also have large #s of committees.  
@@ -131,7 +131,7 @@ The above is comparing the numbers of committes in the bar graph to the individu
 ```{r 4log10}
 p7 <- ggplot(aes(x=sta,y=tot_rec),data=campComm) +
     geom_point(size=2,)+scale_y_log10()
-grid.arrange(p5,p7,ncol=1)
+p7
 ```
 
 You can now see that California does a have a large # of larger donations.  However, it's hard to tell how dense they are with just the default black and white dot plot. Lets try out color and Alpha.
@@ -213,7 +213,7 @@ ggplot(aes(x=com_nam,y=tot_rec,label=tot_rec),
 ```
 
 It's interesting to see the real names of these committes and good to see the curve 
-of how it declines from the maximum donation to the 99%. 995 is about 1/3 of the maximum.    Lets see the curve for the top 5% even if we won't be able to make out their names
+of how it declines from the maximum donation to the 99%. 995 is about 1/3 of the maximum.    Lets see the curve for the top 5% even if we won't see their names
 ```{r 11top5}
 # Filter to the Top 5% committees
 upperCampComm <- campComm[campComm$tot_rec > quantile(campComm$tot_rec,probs=.95),]
@@ -237,7 +237,7 @@ ggplot(aes(x=com_nam,y=tot_rec,label=tot_rec),
     axis.text.y = element_blank())
 ```
 
-Th reductio is leveling off or as you can see there are more donations at $40K to $50K range 
+The reduction is leveling off or as you can see there are more donations at $40K to $50K range 
 than at higher ranges. Lets see if that trend continues through the top 50% 
 which per the quartile figures should almost basically give an area chart of all the money received
 ```{r 12top50 }
@@ -287,7 +287,7 @@ ggpairs(sumUpper20CampComm)
 ```
 
 I'm interested in what the correlations are 
-between tot_rec and cas_on_han and the other factors.  Looking at the box plots at the intersection of cas_on_han and com_typ you can see a clear delineation.  The graph and scale are small but seems a similar dilineation for tot_rec as well.  
+between tot_rec and cas_on_han and the other factors.  Looking at the box plots at the intersection of cas_on_han and com_typ you can see a clear delineation showing that com_typ is associated with or driving different behavior in cas_on_hand.  The graph and scale are small but seems a similar dilineation for tot_rec as well.  
 Still hard to see it here, so lets just try them 1 by 1  
 * com_typ = House versus Senate  
 * com_des = Type of committe commitement to the candidate
@@ -383,12 +383,14 @@ The above gives a nice picture of
 a new revelation about Polical Committees: most money is not coming from the big dogs but from the 20% of 
 committes in the 75%to95% range.
 
-Ok so lets conclude - Most revealing information:  
+Ok so lets conclude with 3 graphs of the most revealing information:  
+```
+```
 #1 Top 5% of Committes and pattern of receipts for them.#  
 Interesting to see the names and shows that the top 1% is in no way overshadowing 
 the 95%.  In otherwords there is not a clear majority large Super PAC or small 
 group of Super PACs.
-```{r 17best1,fig.width=12, fig.height=12,}
+```{r 17best1,fig.width=12, fig.height=16,}
 # Filter to the Top 5% committees
 upperCampComm <- campComm[campComm$tot_rec > quantile(campComm$tot_rec,probs=.95),]
 # condense rows to just plottable data
@@ -409,7 +411,7 @@ ggplot(aes(x=com_nam,y=tot_rec,label=tot_rec),
                      labels=c("$0","$500K","$1M","$1.5M" ))+ 
   coord_flip() +
   theme(axis.text.x = element_text(colour="grey20",size=15,angle=0,hjust=.5,vjust=.5,face="plain"),
-    axis.text.y = element_text(colour="grey20",size=6,angle=0,hjust=.5,
+    axis.text.y = element_text(colour="grey20",size=8,angle=0,hjust=1,
                                vjust=.5,face="plain"),
     plot.title = element_text(colour="DarkGreen",size=25,angle=0,hjust=.5,
                               vjust=.5,face="plain"),
@@ -521,7 +523,7 @@ p12 <- ggplot(aes(x=sta,y=tot_rec,fill=com_typ),
   geom_bar(stat="identity")+scale_fill_discrete()+
   scale_y_continuous(breaks=c(0,500000,1000000,1500000,2000000,2500000),
                      labels=c("$0","$500K","$1M","$1.5M","$2M","$2.5M" ),limits=c(0,3000000))+ 
-  theme(axis.text.x = element_text(colour="grey20",size=8,angle=0,hjust=.5,vjust=.5,face="plain"),
+  theme(axis.text.x = element_text(colour="grey20",size=10,angle=90,hjust=.5,vjust=.5,face="plain"),
     axis.text.y = element_text(colour="grey20",size=12,angle=0,hjust=.5,
                                vjust=.5,face="plain"),
     plot.title = element_text(colour="grey15",size=25,angle=0,hjust=.5,
